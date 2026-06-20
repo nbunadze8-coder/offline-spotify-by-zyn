@@ -260,20 +260,25 @@ b){(new g(a)).read(b)},Reader:g,Config:q}},{"./ArrayFileReader":3,"./BlobFileRea
     right:10px; left:10px; width:auto; bottom:90px;
   }
   body.mobile-mode #queuePanel{
-    right:10px; left:10px; width:auto; bottom:90px;
-  }
+  right:10px; left:10px; width:auto; bottom:90px;
+  max-height:50vh;
+}
   #queuePanel{
-    position:fixed; right:18px; bottom:100px; width:340px; max-height:60vh;
-    background:var(--bg2); border:1px solid var(--border); border-radius:10px;
-    box-shadow:0 8px 24px rgba(0,0,0,.4); z-index:500; display:flex; flex-direction:column;
-  }
-  #queuePanel .lp-header{
-    display:flex; align-items:center; justify-content:space-between; padding:12px 14px;
-    border-bottom:1px solid var(--border); font-size:14px; font-weight:600;
-  }
-  #queuePanel .lp-close{background:none; border:none; color:var(--sub); cursor:pointer; font-size:16px;}
-  #queuePanel .lp-body{padding:6px; overflow-y:auto; flex:1;}
-  #queuePanel .lp-empty{color:var(--sub); font-size:13px; padding:12px;}
+  position:fixed; right:18px; bottom:100px; width:340px; max-height:60vh;
+  background:var(--bg2); border:1px solid var(--border); border-radius:10px;
+  box-shadow:0 8px 24px rgba(0,0,0,.4); z-index:500; display:flex; flex-direction:column;
+  overflow:hidden;
+}
+#queuePanel .lp-header{
+  display:flex; align-items:center; justify-content:space-between; padding:12px 14px;
+  border-bottom:1px solid var(--border); font-size:14px; font-weight:600;
+  flex-shrink:0;
+}
+#queuePanel .lp-close{background:none; border:none; color:var(--sub); cursor:pointer; font-size:16px;}
+#queuePanel .lp-body{
+  padding:6px; overflow-y:auto; flex:1; min-height:0;
+  -webkit-overflow-scrolling:touch; touch-action:pan-y; overscroll-behavior:contain;
+}
   .q-row{
     display:flex; align-items:center; gap:8px; padding:8px 8px; border-radius:6px; cursor:pointer;
   }
@@ -1292,18 +1297,32 @@ function playTrackByQueueIndex(idx){
   const id = queue[idx];
   const t = tracks.find(x=>x.id===id);
   if(!t) return;
-  queueIndex = idx;
   const isNewTrack = currentTrackId !== id;
+  queueIndex = idx;
+
+  // Re-clicking the song that's already loaded and playing should just
+  // be a no-op (or a restart-from-0 if it already finished), not a full
+  // reload + re-render. Reloading audio.src on every click was also
+  // causing a flash of buffering on repeat clicks.
+  if(!isNewTrack){
+    if(audio.paused || audio.ended){
+      audio.currentTime = 0;
+      audio.play().catch(()=>{});
+    }
+    updateNowPlaying(t);
+    return;
+  }
+
   currentTrackId = id;
   audio.src = t.url;
-  audio.play();
+  audio.play().catch(()=>{});
   updateNowPlaying(t);
   render();
-  if(isNewTrack) recordPlayStart(id);
+  recordPlayStart(id);
   if(document.getElementById('lyricsPanel').style.display !== 'none') renderLyricsPanel();
   if(document.getElementById('queuePanel').style.display !== 'none') renderQueuePanel();
 }
-
+  
 function updateNowPlaying(t){
   document.getElementById('nowTitle').textContent = t ? t.name : 'Nothing playing';
   document.getElementById('nowFolder').textContent = t
@@ -1351,7 +1370,43 @@ audio.onended = ()=>{
     skip(1);
   }
 };
+// Re-sync playback state whenever the tab/app regains visibility.
+// Mobile browsers throttle timers and can desync the audio element
+// from our queue state while backgrounded, so on return we check
+// whether what's loaded still matches what we think is playing,
+// and recover gracefully instead of silently doing nothing.
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState !== 'visible') return;
+  if(currentTrackId == null) return;
+  const t = tracks.find(x=>x.id===currentTrackId);
+  if(!t) return;
+  // If the audio element lost its source (some mobile browsers clear
+  // it under memory pressure) or somehow drifted to a different file,
+  // reload the correct track without resetting playback position.
+  if(!audio.src || audio.src !== t.url){
+    const wasPlaying = !audio.paused;
+    const savedTime = audio.currentTime;
+    audio.src = t.url;
+    audio.currentTime = savedTime || 0;
+    if(wasPlaying) audio.play().catch(()=>{});
+  }
+  // If playback silently stalled at the very end without onended
+  // firing (happens when 'ended' gets missed during suspension),
+  // advance the queue ourselves.
+  if(audio.ended){
+    if(repeatOne){
+      audio.currentTime = 0;
+      audio.play().catch(()=>{});
+    } else {
+      skip(1);
+    }
+  }
+  render();
+  if(document.getElementById('queuePanel').style.display !== 'none') renderQueuePanel();
+});
 
+
+  
 // ---- Queue panel ----
 document.getElementById('queueBtn').onclick = ()=>{
   const panel = document.getElementById('queuePanel');
