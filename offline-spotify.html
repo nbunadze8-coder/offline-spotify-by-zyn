@@ -913,8 +913,9 @@ function addTrack(fileOrBlob, name){
   const cleanName = name || 'Untitled';
   const size = fileOrBlob.size;
 
-  // Same name + same file size = treat as the same song already in the library.
-  const existing = tracks.find(t => t.name === cleanName && t.size === size);
+  // Match on the original filename + size, since track.name can later get
+  // overwritten by the real ID3 title, which would break a name-based match.
+  const existing = tracks.find(t => t.origName === cleanName && t.size === size);
   if(existing){
     if(currentFolder !== 'All tracks' && !existing.folders.includes(currentFolder)){
       existing.folders.push(currentFolder);
@@ -926,6 +927,7 @@ function addTrack(fileOrBlob, name){
   const track = {
     id: idCounter++,
     name: cleanName,
+    origName: cleanName,
     size,
     artist: '',
     coverUrl: null,
