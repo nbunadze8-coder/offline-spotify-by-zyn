@@ -1559,7 +1559,11 @@ function fmtTime(s){
   return `${m}:${sec.toString().padStart(2,'0')}`;
 }
 
-render();
+(async function init(){
+  db = await openDB();
+  await loadState();
+  render();
+})();
 
 // ---- PWA: register service worker so this works fully offline after first load ----
 if('serviceWorker' in navigator){
