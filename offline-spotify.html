@@ -449,7 +449,7 @@ b){(new g(a)).read(b)},Reader:g,Config:q}},{"./ArrayFileReader":3,"./BlobFileRea
 </style>
 </head>
 <body>
-<div style="position:fixed; bottom:6px; right:8px; z-index:99999; font-size:11px; color:rgba(255,255,255,0.35); font-family:monospace; pointer-events:none;">v6</div>
+<div style="position:fixed; bottom:6px; right:8px; z-index:99999; font-size:11px; color:rgba(255,255,255,0.35); font-family:monospace; pointer-events:none;">v7</div>
 
 <div id="deviceChooser" style="position:fixed; inset:0; z-index:9999; background:var(--bg); display:flex; align-items:center; justify-content:center; flex-direction:column; gap:24px; color:var(--text); padding:20px; text-align:center;">
   <div>
@@ -697,17 +697,35 @@ function schedulePersist(){
 async function persistAll(){
   if(!dirty || !db) return;
   dirty = false;
+  // IMPORTANT: we store the raw bytes as ArrayBuffer, NOT as a Blob object.
+  // iOS WebKit has a long-standing bug where Blobs stored directly in
+  // IndexedDB can come back corrupted/unreadable when the page is loaded
+  // fresh in a NEW browser/process session (exactly what happens on a cold
+  // relaunch) -- usually the first Blob read still works, but others don't.
+  // This is what was causing playback to break specifically after closing
+  // and reopening the app. ArrayBuffers don't have this bug, so we convert
+  // to bytes here and rebuild fresh Blobs from those bytes in loadState().
+  const tracksData = await Promise.all(tracks.map(async t => ({
+    id: t.id, name: t.name, artist: t.artist, lyrics: t.lyrics || null,
+    folders: t.folders,
+    audioBuffer: await t.rawBlob.arrayBuffer(),
+    audioType: t.rawBlob.type || 'audio/mpeg',
+    coverBuffer: t.rawCoverBlob ? await t.rawCoverBlob.arrayBuffer() : null,
+    coverType: t.rawCoverBlob ? (t.rawCoverBlob.type || 'image/jpeg') : null
+  })));
+  const folderCoverEntries = await Promise.all(
+    Object.entries(folderCoverRawBlobs).map(async ([name, blob]) => [
+      name, await blob.arrayBuffer(), blob.type || 'image/jpeg'
+    ])
+  );
   const data = {
     key: 'main',
     idCounter,
     folders,
     settings,
     statsData,
-    tracksData: tracks.map(t => ({
-      id: t.id, name: t.name, artist: t.artist, lyrics: t.lyrics || null,
-      folders: t.folders, audioBlob: t.rawBlob, coverBlob: t.rawCoverBlob || null
-    })),
-    folderCoverBlobs: { ...folderCoverRawBlobs }
+    tracksData,
+    folderCoverBuffers: folderCoverEntries
   };
   await dbPutState(data);
 }
@@ -720,41 +738,63 @@ async function loadState(){
   if(data.settings) Object.assign(settings, data.settings);
   statsData = data.statsData || { plays: {}, totalSeconds: 0 };
 
+  let needsResave = false;
+
   tracks = (data.tracksData || []).map(td=>{
     let coverUrl = null;
-    // NOTE: we deliberately do NOT call URL.createObjectURL() on the audio
-    // blob here anymore. Previously every track in the library got a
-    // permanent blob: URL the moment the app loaded, all kept alive for the
-    // whole session. On iOS, a homescreen/standalone PWA runs in a much
-    // more memory-constrained WKWebView process than a normal Safari tab,
-    // and holding dozens/hundreds of decoded-audio blob URLs alive at once
-    // after a fresh cold launch was silently corrupting playback after the
-    // first track switch (the 2nd blob URL would fail to actually load).
-    // Instead, url is created lazily in ensureTrackUrl() only for whichever
-    // track is about to play, and the previous track's url is revoked when
-    // we move on. We still validate the blob is readable here so corrupted
-    // entries get dropped like before, but we revoke the test URL right away.
-    let blobOk = true;
-    try{
-      const testUrl = URL.createObjectURL(td.audioBlob);
-      URL.revokeObjectURL(testUrl);
-    }catch(e){ blobOk = false; }
-    if(td.coverBlob){
-      try{ coverUrl = URL.createObjectURL(td.coverBlob); }catch(e){ /* fine, no cover */ }
+    let rawBlob = null, rawCoverBlob = null, blobOk = true;
+    if(td.audioBuffer){
+      try{ rawBlob = new Blob([td.audioBuffer], { type: td.audioType || 'audio/mpeg' }); }
+      catch(e){ blobOk = false; }
+    } else if(td.audioBlob){
+      // Legacy entries saved before this fix -- still a raw Blob that may
+      // already be corrupted from a previous cold start, but we try it and
+      // flag a resave so it gets converted to the safer ArrayBuffer format.
+      rawBlob = td.audioBlob;
+      needsResave = true;
+      try{ const u = URL.createObjectURL(rawBlob); URL.revokeObjectURL(u); }
+      catch(e){ blobOk = false; }
+    } else {
+      blobOk = false;
+    }
+    if(td.coverBuffer){
+      try{
+        rawCoverBlob = new Blob([td.coverBuffer], { type: td.coverType || 'image/jpeg' });
+        coverUrl = URL.createObjectURL(rawCoverBlob);
+      }catch(e){ /* fine, no cover */ }
+    } else if(td.coverBlob){
+      rawCoverBlob = td.coverBlob;
+      try{ coverUrl = URL.createObjectURL(rawCoverBlob); }catch(e){ /* fine, no cover */ }
     }
     return {
       id: td.id, name: td.name, artist: td.artist || '', lyrics: td.lyrics || null,
       folders: td.folders || [], coverUrl, url: null, _blobOk: blobOk,
-      rawBlob: td.audioBlob, rawCoverBlob: td.coverBlob || null
+      rawBlob, rawCoverBlob
     };
   }).filter(t => t._blobOk); // drop any track whose audio failed to load
 
-  Object.entries(data.folderCoverBlobs || {}).forEach(([name, blob])=>{
-    folderCoverRawBlobs[name] = blob;
-    try{ folderCovers[name] = URL.createObjectURL(blob); }catch(e){ /* fine */ }
-  });
+  if(data.folderCoverBuffers){
+    data.folderCoverBuffers.forEach(([name, buffer, type])=>{
+      try{
+        const blob = new Blob([buffer], { type: type || 'image/jpeg' });
+        folderCoverRawBlobs[name] = blob;
+        folderCovers[name] = URL.createObjectURL(blob);
+      }catch(e){ /* fine */ }
+    });
+  } else if(data.folderCoverBlobs){
+    needsResave = true;
+    Object.entries(data.folderCoverBlobs).forEach(([name, blob])=>{
+      folderCoverRawBlobs[name] = blob;
+      try{ folderCovers[name] = URL.createObjectURL(blob); }catch(e){ /* fine */ }
+    });
+  }
 
   applySettings();
+
+  // If we migrated any legacy Blob-based entries above, immediately rewrite
+  // them to IndexedDB in the safer ArrayBuffer format so this self-heals
+  // on the very next load instead of staying on the risky format forever.
+  if(needsResave) schedulePersist();
 }
 
 // Lazily create a blob: URL for a track's audio, only when we're actually

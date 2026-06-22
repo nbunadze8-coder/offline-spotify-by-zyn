@@ -1,4 +1,4 @@
-const CACHE_NAME = 'offline-player-v6';
+const CACHE_NAME = 'offline-player-v7';
 const FILES_TO_CACHE = [
   'offline-spotify.html',
   'manifest.json'
