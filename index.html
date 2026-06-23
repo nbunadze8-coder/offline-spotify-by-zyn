@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="MusiCloud" />
+  <meta name="theme-color" content="#0f0f13" />
+  <title>MusiCloud</title>
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json" />
+
+  <!-- Apple Touch Icons -->
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- External Libraries (CDN — cached by Service Worker on first load) -->
+  <!-- JSZip: client-side zip extraction -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <!-- jsmediatags: ID3 tag parsing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════
+     APP SHELL
+════════════════════════════════════════════════════ -->
+<div id="app">
+
+  <!-- ── SIDEBAR (desktop) / BOTTOM NAV (mobile) ── -->
+  <nav id="sidebar">
+    <div id="logo">
+      <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="16" cy="16" r="16" fill="var(--accent)"/>
+        <path d="M10 22V10l14 6-14 6z" fill="#fff"/>
+      </svg>
+      <span>MusiCloud</span>
+    </div>
+
+    <ul id="nav-links">
+      <li><button class="nav-btn active" data-view="home">
+        <svg viewBox="0 0 24 24"><path d="M3 12l9-9 9 9v9H3v-9z"/></svg>
+        <span>Home</span>
+      </button></li>
+      <li><button class="nav-btn" data-view="songs">
+        <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <span>Songs</span>
+      </button></li>
+      <li><button class="nav-btn" data-view="albums">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M12 8v1m0 6v1M8 12H7m10 0h-1"/></svg>
+        <span>Albums</span>
+      </button></li>
+      <li><button class="nav-btn" data-view="artists">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        <span>Artists</span>
+      </button></li>
+      <li><button class="nav-btn" data-view="playlists">
+        <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h12"/></svg>
+        <span>Playlists</span>
+      </button></li>
+      <li><button class="nav-btn" data-view="favorites">
+        <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        <span>Favorites</span>
+      </button></li>
+      <li><button class="nav-btn" data-view="stats">
+        <svg viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+        <span>Stats</span>
+      </button></li>
+    </ul>
+
+    <div id="sidebar-bottom">
+      <button class="nav-btn" data-view="settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Settings</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ── MAIN CONTENT AREA ── -->
+  <main id="main-content">
+
+    <!-- HOME VIEW -->
+    <section id="view-home" class="view active">
+      <h1 class="view-title">Good <span id="greeting-time">evening</span></h1>
+      <div id="home-recents" class="card-grid"></div>
+      <h2 class="section-title">Recently Added</h2>
+      <div id="home-recent-songs" class="song-list"></div>
+    </section>
+
+    <!-- SONGS VIEW -->
+    <section id="view-songs" class="view">
+      <div class="view-header">
+        <h1 class="view-title">Songs</h1>
+        <div class="view-controls">
+          <div class="search-wrap">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input type="search" id="search-input" placeholder="Search songs, artists…" autocomplete="off" />
+          </div>
+          <select id="sort-select">
+            <option value="title">Title</option>
+            <option value="artist">Artist</option>
+            <option value="dateAdded">Date Added</option>
+            <option value="playCount">Most Played</option>
+          </select>
+          <!-- Select mode toggle -->
+          <button class="btn-secondary" id="select-mode-btn" title="Select songs">
+            <svg viewBox="0 0 24 24" width="15" height="15" style="margin-right:5px;vertical-align:-2px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Select
+          </button>
+        </div>
+      </div>
+
+      <!-- Multi-select action bar (hidden until select mode active) -->
+      <div id="multiselect-bar" class="hidden">
+        <span id="multiselect-count">0 selected</span>
+        <div id="multiselect-actions">
+          <button class="btn-secondary" id="ms-select-all-btn">Select All</button>
+          <button class="btn-secondary" id="ms-add-queue-btn">
+            <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h12M3 18h9"/><line x1="19" y1="15" x2="19" y2="21"/><line x1="16" y1="18" x2="22" y2="18"/></svg>
+            Add to Queue
+          </button>
+          <button class="btn-primary" id="ms-add-playlist-btn">
+            <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h12M3 18h9"/><line x1="19" y1="15" x2="19" y2="21"/><line x1="16" y1="18" x2="22" y2="18"/></svg>
+            + Playlist
+          </button>
+          <button class="btn-secondary" id="ms-cancel-btn">Cancel</button>
+        </div>
+      </div>
+
+      <div id="songs-list" class="song-list"></div>
+    </section>
+
+    <!-- ALBUMS VIEW -->
+    <section id="view-albums" class="view">
+      <h1 class="view-title">Albums</h1>
+      <div id="albums-grid" class="card-grid"></div>
+      <div id="album-detail" class="detail-view hidden">
+        <button class="back-btn" id="back-from-album">
+          <svg viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+          Back to Albums
+        </button>
+        <div id="album-detail-header" class="detail-header"></div>
+        <div id="album-detail-songs" class="song-list"></div>
+      </div>
+    </section>
+
+    <!-- ARTISTS VIEW -->
+    <section id="view-artists" class="view">
+      <h1 class="view-title">Artists</h1>
+      <div id="artists-grid" class="card-grid artist-grid"></div>
+      <div id="artist-detail" class="detail-view hidden">
+        <button class="back-btn" id="back-from-artist">
+          <svg viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+          Back to Artists
+        </button>
+        <div id="artist-detail-header" class="detail-header"></div>
+        <div id="artist-detail-songs" class="song-list"></div>
+      </div>
+    </section>
+
+    <!-- PLAYLISTS VIEW -->
+    <section id="view-playlists" class="view">
+      <div class="view-header">
+        <h1 class="view-title">Playlists</h1>
+        <button class="btn-primary" id="new-playlist-btn">+ New Playlist</button>
+      </div>
+      <div id="playlists-grid" class="card-grid"></div>
+      <div id="playlist-detail" class="detail-view hidden">
+        <button class="back-btn" id="back-from-playlist">
+          <svg viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+          Back to Playlists
+        </button>
+        <div id="playlist-detail-header" class="detail-header"></div>
+        <div id="playlist-detail-songs" class="song-list"></div>
+      </div>
+    </section>
+
+    <!-- FAVORITES VIEW -->
+    <section id="view-favorites" class="view">
+      <h1 class="view-title">Favorites</h1>
+      <div id="favorites-list" class="song-list"></div>
+    </section>
+
+    <!-- STATS VIEW -->
+    <section id="view-stats" class="view">
+      <h1 class="view-title">Your Stats</h1>
+      <div id="stats-content"></div>
+    </section>
+
+    <!-- SETTINGS VIEW -->
+    <section id="view-settings" class="view">
+      <h1 class="view-title">Settings</h1>
+      <div id="settings-content">
+
+        <div class="settings-section">
+          <h2>Theme</h2>
+          <div class="setting-row">
+            <label>Mode</label>
+            <div class="toggle-group">
+              <button class="toggle-btn active" data-theme="dark">Dark</button>
+              <button class="toggle-btn" data-theme="light">Light</button>
+            </div>
+          </div>
+          <div class="setting-row">
+            <label>Accent Color</label>
+            <div class="color-swatches" id="accent-swatches">
+              <button class="swatch active" data-color="#1db954" style="background:#1db954" title="Green"></button>
+              <button class="swatch" data-color="#7c3aed" style="background:#7c3aed" title="Purple"></button>
+              <button class="swatch" data-color="#e11d48" style="background:#e11d48" title="Red"></button>
+              <button class="swatch" data-color="#0ea5e9" style="background:#0ea5e9" title="Blue"></button>
+              <button class="swatch" data-color="#f59e0b" style="background:#f59e0b" title="Amber"></button>
+              <button class="swatch" data-color="#ec4899" style="background:#ec4899" title="Pink"></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h2>Library</h2>
+          <div class="setting-row">
+            <div>
+              <strong>Upload Music</strong>
+              <p>Add MP3 files or a ZIP archive to your library</p>
+            </div>
+            <label class="btn-primary file-label" for="file-input">
+              Upload Files
+              <input type="file" id="file-input" accept=".mp3,.zip" multiple hidden />
+            </label>
+          </div>
+          <div class="setting-row">
+            <div>
+              <strong>ZIP → Playlist</strong>
+              <p>Upload a ZIP of MP3s and send them straight into a playlist</p>
+            </div>
+            <label class="btn-secondary file-label" for="zip-playlist-input">
+              ZIP to Playlist
+              <input type="file" id="zip-playlist-input" accept=".zip" hidden />
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h2>Backup &amp; Restore</h2>
+          <div class="setting-row">
+            <div>
+              <strong>Export Library</strong>
+              <p>Download a backup ZIP of your metadata and songs</p>
+            </div>
+            <button class="btn-secondary" id="export-btn">Export</button>
+          </div>
+          <div class="setting-row">
+            <div>
+              <strong>Import Library</strong>
+              <p>Restore from a previous export</p>
+            </div>
+            <label class="btn-secondary file-label" for="import-input">
+              Import
+              <input type="file" id="import-input" accept=".zip" hidden />
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h2>About</h2>
+          <div class="setting-row">
+            <span>MusiCloud v1.0 — fully offline PWA</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ── MINI PLAYER ── -->
+  <div id="mini-player" class="hidden">
+    <div id="mini-art-wrap">
+      <img id="mini-art" src="" alt="Album art" />
+      <div id="mini-art-placeholder">
+        <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      </div>
+    </div>
+    <div id="mini-info">
+      <div id="mini-title">—</div>
+      <div id="mini-artist">—</div>
+    </div>
+    <div id="mini-controls">
+      <button id="mini-fav-btn" class="icon-btn" title="Favorite">
+        <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+      </button>
+      <button id="mini-play-btn" class="icon-btn play-btn" title="Play / Pause">
+        <svg class="icon-play" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+        <svg class="icon-pause hidden" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+      </button>
+      <button id="mini-next-btn" class="icon-btn" title="Next">
+        <svg viewBox="0 0 24 24"><polygon points="5,4 15,12 5,20"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+      </button>
+      <button id="expand-player-btn" class="icon-btn" title="Expand">
+        <svg viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"/></svg>
+      </button>
+    </div>
+    <!-- Progress bar at bottom of mini player -->
+    <div id="mini-progress-bar">
+      <div id="mini-progress-fill"></div>
+    </div>
+  </div>
+
+  <!-- ── NOW PLAYING (expanded) ── -->
+  <div id="now-playing" class="hidden">
+    <div id="np-header">
+      <button id="collapse-player-btn" class="icon-btn">
+        <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <span id="np-context-label">Now Playing</span>
+      <button id="np-queue-btn" class="icon-btn">
+        <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h12"/></svg>
+      </button>
+    </div>
+
+    <div id="np-art-wrap">
+      <img id="np-art" src="" alt="Album art" />
+      <div id="np-art-placeholder">
+        <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      </div>
+    </div>
+
+    <div id="np-info">
+      <div id="np-title">—</div>
+      <div id="np-artist">—</div>
+      <button id="np-fav-btn" class="icon-btn fav-btn" title="Favorite">
+        <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+      </button>
+    </div>
+
+    <div id="np-progress">
+      <div id="np-seek-bar">
+        <div id="np-seek-fill"></div>
+        <div id="np-seek-thumb"></div>
+      </div>
+      <div id="np-times">
+        <span id="np-current-time">0:00</span>
+        <span id="np-duration">0:00</span>
+      </div>
+    </div>
+
+    <div id="np-controls">
+      <button id="np-shuffle-btn" class="icon-btn mode-btn" title="Shuffle">
+        <svg viewBox="0 0 24 24"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
+      </button>
+      <button id="np-prev-btn" class="icon-btn" title="Previous">
+        <svg viewBox="0 0 24 24"><polygon points="19,20 9,12 19,4"/><line x1="5" y1="19" x2="5" y2="5"/></svg>
+      </button>
+      <button id="np-play-btn" class="icon-btn play-btn-lg" title="Play / Pause">
+        <svg class="icon-play" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+        <svg class="icon-pause hidden" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+      </button>
+      <button id="np-next-btn" class="icon-btn" title="Next">
+        <svg viewBox="0 0 24 24"><polygon points="5,4 15,12 5,20"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+      </button>
+      <button id="np-repeat-btn" class="icon-btn mode-btn" title="Repeat">
+        <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+      </button>
+    </div>
+
+    <div id="np-volume">
+      <svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+      <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="1" />
+    </div>
+  </div>
+
+  <!-- ── QUEUE PANEL ── -->
+  <div id="queue-panel" class="hidden">
+    <div id="queue-header">
+      <h2>Queue</h2>
+      <button id="close-queue-btn" class="icon-btn">
+        <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div id="queue-list"></div>
+  </div>
+
+  <!-- ── CONTEXT MENU ── -->
+  <div id="context-menu" class="hidden">
+    <button data-action="play-now">▶ Play Now</button>
+    <button data-action="play-next">Play Next</button>
+    <button data-action="add-to-queue">Add to Queue</button>
+    <button data-action="toggle-fav">♥ Favorite</button>
+    <button data-action="add-to-playlist">Add to Playlist…</button>
+    <button data-action="remove-from-playlist" class="hidden">Remove from Playlist</button>
+    <button data-action="delete-song" class="danger">Delete Song</button>
+  </div>
+
+  <!-- ── MODALS ── -->
+  <div id="modal-overlay" class="hidden">
+    <div id="modal-box">
+      <div id="modal-title"></div>
+      <div id="modal-body"></div>
+      <div id="modal-actions">
+        <button id="modal-cancel" class="btn-secondary">Cancel</button>
+        <button id="modal-confirm" class="btn-primary">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TOAST NOTIFICATIONS ── -->
+  <div id="toast-container"></div>
+
+  <!-- ── UPLOAD PROGRESS ── -->
+  <div id="upload-progress" class="hidden">
+    <div id="upload-progress-bar"></div>
+    <div id="upload-progress-text">Processing…</div>
+  </div>
+
+</div><!-- #app -->
+
+<!-- ── HIDDEN AUDIO ELEMENT ── -->
+<!--
+  iOS Safari PWA Audio Notes:
+  1. Audio must be triggered by a user gesture initially. After the first tap/play,
+     iOS unlocks the audio context and subsequent playback (including auto-advance)
+     works without gestures.
+  2. Using a single persistent <audio> element (not creating new ones per track)
+     is critical for background playback on iOS. Swapping src and calling play()
+     on the same element works; creating new Audio() objects does not reliably
+     continue in the background.
+  3. The 'ended' event fires reliably on iOS when the screen is locked IF we use
+     MediaSession API + keep the audio element alive. We handle next-track in
+     the 'ended' event listener.
+  4. Silence trick: a tiny silent audio loop is sometimes used to keep the audio
+     session alive on iOS, but with MediaSession this is usually unnecessary.
+     If you experience background audio cutting out, see the keepAlive() function.
+-->
+<audio id="audio-player" preload="metadata"></audio>
+
+<!-- Main Application Script -->
+<script src="app.js" type="module"></script>
+
+</body>
+</html>
